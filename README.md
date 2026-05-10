@@ -4,7 +4,7 @@ Panel web privado para arrancar bajo demanda una transmision de la capturadora c
 
 ## Que hace
 
-- Login con Google mediante NextAuth.
+- Login con Google mediante Firebase Authentication.
 - Lista blanca de emails con `ALLOWED_EMAILS`.
 - Boton protegido que ejecuta un comando SSH en la Raspberry.
 - Reproductor configurable con `NEXT_PUBLIC_STREAM_URL`.
@@ -16,12 +16,19 @@ Copia `.env.example` a `.env.local` para desarrollo local y configura los mismos
 
 El comando de la Raspberry no lo envia el navegador. Vive en `RPI_STREAM_COMMAND`, se ejecuta solo en el servidor y solo despues de validar la sesion.
 
-## Google OAuth
+## Firebase Auth
 
-En Google Cloud Console crea un OAuth Client de tipo Web y anade estos callback URLs:
+En Firebase Console crea una Web App y activa Authentication con Google. Anade este dominio autorizado:
 
-- Local: `http://localhost:3000/api/auth/callback/google`
-- Produccion: `https://stream.alexlose2.me/api/auth/callback/google`
+- `stream.alexlose2.me`
+
+Despues configura en Vercel:
+
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
+- `FIREBASE_PROJECT_ID`
 
 ## Raspberry
 

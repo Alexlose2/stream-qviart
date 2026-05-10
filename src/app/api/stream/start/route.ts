@@ -1,16 +1,14 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
-import { isEmailAllowed } from "@/lib/config";
+import { verifyFirebaseToken } from "@/lib/firebase-token";
 import { runStreamCommand } from "@/lib/raspberry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
-  const session = await getServerSession(authOptions);
+export async function POST(request: Request) {
+  const user = await verifyFirebaseToken(request.headers.get("authorization"));
 
-  if (!isEmailAllowed(session?.user.email)) {
+  if (!user) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 });
   }
 

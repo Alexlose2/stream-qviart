@@ -6,10 +6,7 @@ const booleanFromEnv = z
   .transform((value) => value === "true" || value === "1");
 
 const envSchema = z.object({
-  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
-  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
-  NEXTAUTH_SECRET: z.string().min(32).optional(),
-  NEXTAUTH_URL: z.string().url().optional(),
+  FIREBASE_PROJECT_ID: z.string().min(1).optional(),
   ALLOWED_EMAILS: z.string().min(1).optional(),
   RPI_HOST: z.string().min(1).optional(),
   RPI_PORT: z.coerce.number().int().positive().default(22),
@@ -20,6 +17,10 @@ const envSchema = z.object({
   RPI_COMMAND_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
   NEXT_PUBLIC_STREAM_URL: z.string().url().optional(),
   NEXT_PUBLIC_STREAM_KIND: z.enum(["iframe", "video"]).default("iframe"),
+  NEXT_PUBLIC_FIREBASE_API_KEY: z.string().min(1).optional(),
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: z.string().min(1).optional(),
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: z.string().min(1).optional(),
+  NEXT_PUBLIC_FIREBASE_APP_ID: z.string().min(1).optional(),
   DEMO_MODE: booleanFromEnv.default(false)
 });
 
@@ -36,6 +37,10 @@ export function isEmailAllowed(email?: string | null) {
   if (!email) return false;
   const allowedEmails = getAllowedEmails();
   return allowedEmails.includes(email.toLowerCase());
+}
+
+export function getFirebaseProjectId() {
+  return env.FIREBASE_PROJECT_ID ?? env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 }
 
 export function getMissingRuntimeConfig() {

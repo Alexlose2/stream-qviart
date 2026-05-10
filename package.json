@@ -10,8 +10,9 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "firebase": "12.13.0",
+    "jose": "6.2.3",
     "next": "15.5.18",
-    "next-auth": "4.24.13",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "ssh2": "1.17.0",

@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { User } from "firebase/auth";
 
 type StartState = "idle" | "pending" | "ready" | "error";
 
 type StreamControlsProps = {
   streamUrl?: string;
   streamKind: "iframe" | "video";
+  user: User;
 };
 
 function PlayIcon() {
@@ -32,7 +34,7 @@ function RefreshIcon() {
   );
 }
 
-export function StreamControls({ streamKind, streamUrl }: StreamControlsProps) {
+export function StreamControls({ streamKind, streamUrl, user }: StreamControlsProps) {
   const [state, setState] = useState<StartState>("idle");
   const [message, setMessage] = useState("Todavia no se ha enviado ningun comando.");
   const [frameKey, setFrameKey] = useState(0);
@@ -49,8 +51,12 @@ export function StreamControls({ streamKind, streamUrl }: StreamControlsProps) {
     setMessage("Conectando con la Raspberry...");
 
     try {
+      const token = await user.getIdToken();
       const response = await fetch("/api/stream/start", {
-        method: "POST"
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
       });
       const payload = await response.json();
 

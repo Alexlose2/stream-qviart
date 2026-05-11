@@ -33,6 +33,10 @@ Despues configura en Vercel:
 Tambien activa en Authentication el proveedor `Email/Password` si quieres
 entrar con correo y contrasena.
 
+La app tambien soporta passkeys. Primero entra con Google o correo/contrasena,
+pulsa `Passkey` en la barra superior para registrar este dispositivo, y luego
+podras usar `Entrar con passkey`.
+
 Para la pestana Admin, crea una base de datos Firestore y usa reglas como estas:
 
 ```txt
@@ -61,6 +65,13 @@ service cloud.firestore {
         || storedAdmin()
       );
       allow list, create, update, delete: if bootstrapAdmin() || storedAdmin();
+    }
+
+    match /passkeys/{credentialId} {
+      allow get: if true;
+      allow create, update: if signedIn()
+        && request.resource.data.email == request.auth.token.email;
+      allow delete, list: if bootstrapAdmin() || storedAdmin();
     }
   }
 }

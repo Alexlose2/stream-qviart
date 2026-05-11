@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAllowedEmail, isAdminTokenUser } from "@/lib/allowed-emails";
 import { getBearerToken, verifyFirebaseToken } from "@/lib/firebase-token";
+import { getPasskeySession } from "@/lib/passkey-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +12,12 @@ export async function GET(request: Request) {
   const user = await verifyFirebaseToken(authHeader);
 
   if (!token || !user?.email) {
-    return NextResponse.json({ allowed: false, admin: false });
+    const session = await getPasskeySession();
+    return NextResponse.json({
+      allowed: Boolean(session?.email),
+      admin: false,
+      email: session?.email
+    });
   }
 
   const record = await getAllowedEmail(token, user.email);

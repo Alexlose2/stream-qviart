@@ -8,7 +8,7 @@ type StartState = "idle" | "pending" | "ready" | "error";
 type StreamControlsProps = {
   streamUrl?: string;
   streamKind: "iframe" | "video";
-  user: User;
+  user?: User | null;
 };
 
 function PlayIcon() {
@@ -51,12 +51,10 @@ export function StreamControls({ streamKind, streamUrl, user }: StreamControlsPr
     setMessage("Conectando con la Raspberry...");
 
     try {
-      const token = await user.getIdToken();
+      const token = user ? await user.getIdToken() : null;
       const response = await fetch("/api/stream/start", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       const payload = await response.json();
 

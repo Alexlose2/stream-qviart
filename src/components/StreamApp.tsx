@@ -3,6 +3,7 @@
 import { onAuthStateChanged, type User } from "firebase/auth";
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import {
   createEmailAccount,
   getFirebaseAuth,
@@ -261,6 +262,7 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
   });
   const [activeTab, setActiveTab] = useState<"stream" | "admin">("stream");
   const [error, setError] = useState<string | null>(null);
+  const [passkeyEmail, setPasskeyEmail] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -302,9 +304,9 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
   }, [allowedEmails, user]);
 
   const accountLabel = useMemo(() => {
-    if (!user) return "Cuenta";
+    if (!user) return passkeyEmail ?? "Cuenta";
     return user.displayName ?? user.email ?? "Cuenta";
-  }, [user]);
+  }, [passkeyEmail, user]);
 
   async function handleGoogleSignIn() {
     setError(null);
@@ -313,6 +315,62 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "No se pudo iniciar sesion.");
     }
+  }
+
+  async function handlePasskeySignIn() {
+    setError(null);
+    try {
+      const optionsResponse = await fetch("/api/passkeys/authenticate/options", {
+        method: "POST"
+      });
+      const options = await optionsResponse.json();
+      if (!optionsResponse.ok) throw new Error(options.error ?? "No se pudo iniciar passkey.");
+
+      const credential = await startAuthentication({ optionsJSON: options });
+      const verifyResponse = await fetch("/api/passkeys/authenticate/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credential)
+      });
+      const payload = await verifyResponse.json();
+      if (!verifyResponse.ok) throw new Error(payload.error ?? "No se pudo verificar passkey.");
+
+      setPasskeyEmail(payload.email);
+      setAccess({ allowed: true, admin: false, loading: false });
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "No se pudo entrar con passkey.");
+    }
+  }
+
+  async function handleRegisterPasskey() {
+    if (!user) return;
+    setError(null);
+    try {
+      const optionsResponse = await fetchWithFirebaseToken(user, "/api/passkeys/register/options", {
+        method: "POST"
+      });
+      const options = await optionsResponse.json();
+      if (!optionsResponse.ok) throw new Error(options.error ?? "No se pudo crear la passkey.");
+
+      const credential = await startRegistration({ optionsJSON: options });
+      const verifyResponse = await fetchWithFirebaseToken(user, "/api/passkeys/register/verify", {
+        method: "POST",
+        body: JSON.stringify(credential)
+      });
+      const payload = await verifyResponse.json();
+      if (!verifyResponse.ok) throw new Error(payload.error ?? "No se pudo verificar la passkey.");
+      setError("Passkey guardada en este dispositivo.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "No se pudo guardar la passkey.");
+    }
+  }
+
+  async function handleSignOut() {
+    await fetch("/api/passkeys/session", { method: "DELETE" }).catch(() => undefined);
+    await signOutOfFirebase();
+    setPasskeyEmail(null);
+    setAccess({ allowed: false, admin: false, loading: false });
+    setActiveTab("stream");
   }
 
   return (
@@ -326,16 +384,21 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
           </div>
         </div>
 
-        {user ? (
+        {user || passkeyEmail ? (
           <div className="account">
-            {user.photoURL ? (
+            {user?.photoURL ? (
               <Image alt="" className="avatar" height={38} src={user.photoURL} width={38} />
             ) : null}
             <div>
               <p className="account-name">{accountLabel}</p>
-              <p className="account-email">{user.email}</p>
+              <p className="account-email">{user?.email ?? "Passkey"}</p>
             </div>
-            <button className="secondary-button" onClick={signOutOfFirebase} type="button">
+            {user ? (
+              <button className="secondary-button" onClick={handleRegisterPasskey} type="button">
+                Passkey
+              </button>
+            ) : null}
+            <button className="secondary-button" onClick={handleSignOut} type="button">
               <SignOutIcon />
               Salir
             </button>
@@ -343,7 +406,7 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
         ) : null}
       </header>
 
-      {user && access.allowed ? (
+      {(user || passkeyEmail) && access.allowed ? (
         <>
           <nav className="tabbar" aria-label="Secciones">
             <button
@@ -363,7 +426,7 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
               </button>
             ) : null}
           </nav>
-          {activeTab === "admin" && access.admin ? (
+          {activeTab === "admin" && access.admin && user ? (
             <AdminPanel user={user} />
           ) : (
             <StreamControls streamKind={streamKind} streamUrl={streamUrl} user={user} />
@@ -385,6 +448,14 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
             >
               <GoogleIcon />
               Entrar con Google
+            </button>
+            <button
+              className="secondary-button"
+              disabled={!isFirebaseConfigured || access.loading}
+              onClick={handlePasskeySignIn}
+              type="button"
+            >
+              Entrar con passkey
             </button>
             <div className="divider">o</div>
             <EmailPasswordForm onError={setError} />

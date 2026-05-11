@@ -23,6 +23,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: z.string().min(1).optional(),
   NEXT_PUBLIC_FIREBASE_PROJECT_ID: z.string().min(1).optional(),
   NEXT_PUBLIC_FIREBASE_APP_ID: z.string().min(1).optional(),
+  PASSKEY_SESSION_SECRET: z.string().min(32).optional(),
   DEMO_MODE: booleanFromEnv.default(false)
 });
 
@@ -43,6 +44,10 @@ export function isEmailAllowed(email?: string | null) {
 
 export function getFirebaseProjectId() {
   return env.FIREBASE_PROJECT_ID ?? env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+}
+
+export function getPasskeySessionSecret() {
+  return env.PASSKEY_SESSION_SECRET ?? env.RPI_AGENT_TOKEN;
 }
 
 export function getMissingRuntimeConfig() {

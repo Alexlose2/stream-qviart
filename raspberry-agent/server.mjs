@@ -5,6 +5,9 @@ const host = process.env.AGENT_HOST ?? "127.0.0.1";
 const port = Number(process.env.AGENT_PORT ?? 8787);
 const token = process.env.AGENT_TOKEN;
 const command = process.env.STREAM_COMMAND;
+const stopCommand =
+  process.env.STOP_COMMAND ??
+  "pkill -f 'ffmpeg .*qviart-hls' 2>/dev/null || true; pkill -f 'python3 -m http.server 8093' 2>/dev/null || true";
 const timeout = Number(process.env.COMMAND_TIMEOUT_MS ?? 20000);
 
 if (!token || token.length < 16) {
@@ -23,9 +26,9 @@ function sendJson(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-function runCommand() {
+function runCommand(nextCommand) {
   return new Promise((resolve) => {
-    execFile("sh", ["-lc", command], { timeout }, (error, stdout, stderr) => {
+    execFile("sh", ["-lc", nextCommand], { timeout }, (error, stdout, stderr) => {
       resolve({
         ok: !error,
         code: typeof error?.code === "number" ? error.code : error ? 1 : 0,
@@ -38,7 +41,9 @@ function runCommand() {
 }
 
 const server = createServer(async (request, response) => {
-  if (request.method !== "POST" || request.url !== "/start") {
+  const path = new URL(request.url ?? "/", "http://localhost").pathname;
+
+  if (request.method !== "POST" || (path !== "/start" && path !== "/stop")) {
     sendJson(response, 404, { error: "Not found" });
     return;
   }
@@ -48,10 +53,10 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  const result = await runCommand();
+  const result = await runCommand(path === "/stop" ? stopCommand : command);
   sendJson(response, result.ok ? 200 : 500, result);
 });
 
 server.listen(port, host, () => {
-  console.log(`Raspberry agent listening on http://${host}:${port}/start`);
+  console.log(`Raspberry agent listening on http://${host}:${port}`);
 });

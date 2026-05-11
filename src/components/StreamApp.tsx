@@ -429,7 +429,12 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
           {activeTab === "admin" && access.admin && user ? (
             <AdminPanel user={user} />
           ) : (
-            <StreamControls streamKind={streamKind} streamUrl={streamUrl} user={user} />
+            <StreamControls
+              canStopStream={access.admin}
+              streamKind={streamKind}
+              streamUrl={streamUrl}
+              user={user}
+            />
           )}
         </>
       ) : (

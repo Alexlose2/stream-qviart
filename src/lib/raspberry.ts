@@ -9,17 +9,27 @@ export type StreamCommandResult = {
   stderr: string;
 };
 
+export type StreamCommandAction = "start" | "stop";
+
 function getPrivateKey() {
   return env.RPI_PRIVATE_KEY?.replace(/\\n/g, "\n");
 }
 
-export async function runStreamCommand(): Promise<StreamCommandResult> {
+function getAgentActionUrl(action: StreamCommandAction, agentUrl: string) {
+  if (action === "start") return agentUrl;
+
+  const url = new URL(agentUrl);
+  url.pathname = url.pathname.replace(/\/start\/?$/, "/stop");
+  return url.toString();
+}
+
+export async function runStreamCommand(action: StreamCommandAction = "start"): Promise<StreamCommandResult> {
   if (env.DEMO_MODE) {
     return {
       ok: true,
       code: 0,
       signal: null,
-      stdout: "DEMO_MODE activo: comando simulado correctamente.",
+      stdout: `DEMO_MODE activo: comando ${action} simulado correctamente.`,
       stderr: ""
     };
   }
@@ -31,13 +41,13 @@ export async function runStreamCommand(): Promise<StreamCommandResult> {
   }
 
   if (env.RPI_AGENT_URL) {
-    const response = await fetch(env.RPI_AGENT_URL, {
+    const response = await fetch(getAgentActionUrl(action, env.RPI_AGENT_URL), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.RPI_AGENT_TOKEN}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ action: "start" }),
+      body: JSON.stringify({ action }),
       signal: AbortSignal.timeout(env.RPI_COMMAND_TIMEOUT_MS)
     });
 
@@ -67,37 +77,42 @@ export async function runStreamCommand(): Promise<StreamCommandResult> {
 
     connection
       .on("ready", () => {
-        connection.exec(env.RPI_STREAM_COMMAND!, (error, stream) => {
-          if (error) {
-            clearTimeout(timeout);
-            connection.end();
-            reject(error);
-            return;
-          }
-
-          let stdout = "";
-          let stderr = "";
-
-          stream
-            .on("close", (code: number | null, signal: string | null) => {
+        connection.exec(
+          action === "stop"
+            ? "pkill -f 'ffmpeg .*qviart-hls' 2>/dev/null || true; pkill -f 'python3 -m http.server 8093' 2>/dev/null || true"
+            : env.RPI_STREAM_COMMAND!,
+          (error, stream) => {
+            if (error) {
               clearTimeout(timeout);
               connection.end();
-              resolve({
-                ok: code === 0,
-                code,
-                signal,
-                stdout,
-                stderr
-              });
-            })
-            .on("data", (chunk: Buffer) => {
-              stdout += chunk.toString();
-            });
+              reject(error);
+              return;
+            }
 
-          stream.stderr.on("data", (chunk: Buffer) => {
-            stderr += chunk.toString();
-          });
-        });
+            let stdout = "";
+            let stderr = "";
+
+            stream
+              .on("close", (code: number | null, signal: string | null) => {
+                clearTimeout(timeout);
+                connection.end();
+                resolve({
+                  ok: code === 0,
+                  code,
+                  signal,
+                  stdout,
+                  stderr
+                });
+              })
+              .on("data", (chunk: Buffer) => {
+                stdout += chunk.toString();
+              });
+
+            stream.stderr.on("data", (chunk: Buffer) => {
+              stderr += chunk.toString();
+            });
+          }
+        );
       })
       .on("error", (error) => {
         clearTimeout(timeout);

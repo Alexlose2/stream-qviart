@@ -6,6 +6,7 @@ import type { User } from "firebase/auth";
 type StartState = "idle" | "pending" | "ready" | "error";
 
 type StreamControlsProps = {
+  canStopStream?: boolean;
   streamUrl?: string;
   streamKind: "hls" | "iframe" | "video";
   user?: User | null;
@@ -30,6 +31,14 @@ function RefreshIcon() {
         strokeLinejoin="round"
         strokeWidth="2"
       />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg aria-hidden="true" height="17" viewBox="0 0 24 24" width="17">
+      <path d="M8 8h8v8H8z" fill="currentColor" />
     </svg>
   );
 }
@@ -143,7 +152,7 @@ function HlsPlayer({
   return <video ref={videoRef} controls playsInline />;
 }
 
-export function StreamControls({ streamKind, streamUrl, user }: StreamControlsProps) {
+export function StreamControls({ canStopStream = false, streamKind, streamUrl, user }: StreamControlsProps) {
   const [state, setState] = useState<StartState>("idle");
   const [message, setMessage] = useState("Todavia no se ha enviado ningun comando.");
   const [frameKey, setFrameKey] = useState(0);
@@ -176,6 +185,39 @@ export function StreamControls({ streamKind, streamUrl, user }: StreamControlsPr
       }
 
       setState(payload.ok ? "ready" : "error");
+      setFrameKey((current) => current + 1);
+      setMessage(
+        [
+          `Estado: ${payload.status}`,
+          payload.stdout ? `STDOUT:\n${payload.stdout}` : "",
+          payload.stderr ? `STDERR:\n${payload.stderr}` : ""
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      );
+    } catch (error) {
+      setState("error");
+      setMessage(error instanceof Error ? error.message : "Error desconocido.");
+    }
+  }
+
+  async function stopStream() {
+    setState("pending");
+    setMessage("Parando la transmision...");
+
+    try {
+      const token = user ? await user.getIdToken() : null;
+      const response = await fetch("/api/stream/stop", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "No se pudo parar la transmision.");
+      }
+
+      setState(payload.ok ? "idle" : "error");
       setFrameKey((current) => current + 1);
       setMessage(
         [
@@ -274,6 +316,18 @@ export function StreamControls({ streamKind, streamUrl, user }: StreamControlsPr
           <RefreshIcon />
           Recargar reproductor
         </button>
+
+        {canStopStream ? (
+          <button
+            className="danger-button"
+            disabled={state === "pending"}
+            onClick={stopStream}
+            type="button"
+          >
+            <StopIcon />
+            Parar transmision
+          </button>
+        ) : null}
 
         <pre className="command-output">{message}</pre>
       </aside>

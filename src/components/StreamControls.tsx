@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 
 type StartState = "idle" | "pending" | "ready" | "error";
@@ -34,7 +34,15 @@ function RefreshIcon() {
   );
 }
 
-function HlsPlayer({ reloadKey, streamUrl }: { reloadKey: number; streamUrl: string }) {
+function HlsPlayer({
+  onStatus,
+  reloadKey,
+  streamUrl
+}: {
+  onStatus: (message: string) => void;
+  reloadKey: number;
+  streamUrl: string;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -44,19 +52,48 @@ function HlsPlayer({ reloadKey, streamUrl }: { reloadKey: number; streamUrl: str
     let hlsInstance: { destroy: () => void } | undefined;
     let cancelled = false;
 
+    const reportVideoState = (label: string) => {
+      onStatus(
+        [
+          `Reproductor: ${label}`,
+          `readyState=${video.readyState}`,
+          `networkState=${video.networkState}`,
+          video.error ? `mediaError=${video.error.code}` : ""
+        ]
+          .filter(Boolean)
+          .join("\n")
+      );
+    };
+
+    const onCanPlay = () => reportVideoState("canplay");
+    const onError = () => reportVideoState("media error");
+    const onLoadedMetadata = () => reportVideoState("metadata cargada");
+    const onPlaying = () => reportVideoState("reproduciendo");
+    const onWaiting = () => reportVideoState("esperando datos");
+
+    video.addEventListener("canplay", onCanPlay);
+    video.addEventListener("error", onError);
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("waiting", onWaiting);
+
     async function loadStream() {
       if (!video) return;
 
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        onStatus("Reproductor: HLS nativo");
         video.src = streamUrl;
         return;
       }
 
       const { default: Hls } = await import("hls.js");
       if (cancelled || !Hls.isSupported()) {
+        onStatus("Reproductor: hls.js no soportado, usando video directo");
         video.src = streamUrl;
         return;
       }
+
+      onStatus("Reproductor: cargando HLS con hls.js");
 
       const hls = new Hls({
         backBufferLength: 30,
@@ -64,6 +101,23 @@ function HlsPlayer({ reloadKey, streamUrl }: { reloadKey: number; streamUrl: str
         liveMaxLatencyDurationCount: 12,
         liveSyncDurationCount: 6,
         lowLatencyMode: false
+      });
+
+      hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+        onStatus(`Reproductor: manifest cargado\nniveles=${data.levels.length}`);
+      });
+      hls.on(Hls.Events.FRAG_LOADED, (_event, data) => {
+        onStatus(`Reproductor: segmento cargado\nsn=${data.frag.sn}`);
+      });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        onStatus(
+          [
+            "Reproductor: error HLS",
+            `type=${data.type}`,
+            `details=${data.details}`,
+            `fatal=${data.fatal ? "si" : "no"}`
+          ].join("\n")
+        );
       });
 
       hls.loadSource(streamUrl);
@@ -75,11 +129,16 @@ function HlsPlayer({ reloadKey, streamUrl }: { reloadKey: number; streamUrl: str
 
     return () => {
       cancelled = true;
+      video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("error", onError);
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("waiting", onWaiting);
       hlsInstance?.destroy();
       video.removeAttribute("src");
       video.load();
     };
-  }, [reloadKey, streamUrl]);
+  }, [onStatus, reloadKey, streamUrl]);
 
   return <video ref={videoRef} controls playsInline />;
 }
@@ -88,6 +147,10 @@ export function StreamControls({ streamKind, streamUrl, user }: StreamControlsPr
   const [state, setState] = useState<StartState>("idle");
   const [message, setMessage] = useState("Todavia no se ha enviado ningun comando.");
   const [frameKey, setFrameKey] = useState(0);
+
+  const reportPlayerStatus = useCallback((playerMessage: string) => {
+    setMessage((current) => `${current.split("\n\nReproductor:")[0]}\n\n${playerMessage}`);
+  }, []);
 
   const statusLabel = useMemo(() => {
     if (state === "pending") return "Arrancando";
@@ -143,7 +206,12 @@ export function StreamControls({ streamKind, streamUrl, user }: StreamControlsPr
         <section className="stream-frame" aria-label="Reproductor de stream">
           {streamUrl ? (
             streamKind === "hls" ? (
-              <HlsPlayer key={frameKey} reloadKey={frameKey} streamUrl={streamUrl} />
+              <HlsPlayer
+                key={frameKey}
+                onStatus={reportPlayerStatus}
+                reloadKey={frameKey}
+                streamUrl={streamUrl}
+              />
             ) : streamKind === "video" ? (
               <video key={frameKey} controls playsInline>
                 <source src={streamUrl} type="video/mp4" />

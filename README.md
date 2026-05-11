@@ -40,6 +40,25 @@ sudo systemctl start qviart-stream.service
 
 Asi la web no contiene el comando largo de captura y la Raspberry puede gestionar permisos, logs y reinicios.
 
+Si la Raspberry solo esta dentro de tu red local, usa `raspberry-agent/server.mjs`
+con Tailscale Funnel y configura en Vercel:
+
+- `RPI_AGENT_URL`
+- `RPI_AGENT_TOKEN`
+
+En ese modo Vercel no usa SSH. Llama por HTTPS al Funnel y el agente local ejecuta
+`STREAM_COMMAND` en la Raspberry.
+
+Ejemplo en la Raspberry:
+
+```bash
+cd ~/stream-qviart/raspberry-agent
+AGENT_TOKEN="pon-un-token-largo" STREAM_COMMAND="sudo systemctl start qviart-stream.service" node server.mjs
+sudo tailscale funnel --https=443 http://127.0.0.1:8787
+```
+
+La URL resultante de Tailscale acabara en `/start` para `RPI_AGENT_URL`.
+
 ## Desarrollo
 
 ```bash

@@ -13,6 +13,8 @@ const envSchema = z.object({
   RPI_USERNAME: z.string().min(1).optional(),
   RPI_PRIVATE_KEY: z.string().min(1).optional(),
   RPI_PASSWORD: z.string().min(1).optional(),
+  RPI_AGENT_URL: z.string().url().optional(),
+  RPI_AGENT_TOKEN: z.string().min(16).optional(),
   RPI_STREAM_COMMAND: z.string().min(1).optional(),
   RPI_COMMAND_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
   NEXT_PUBLIC_STREAM_URL: z.string().url().optional(),
@@ -46,11 +48,14 @@ export function getFirebaseProjectId() {
 export function getMissingRuntimeConfig() {
   const missing: string[] = [];
 
+  if (env.RPI_AGENT_URL) {
+    if (!env.RPI_AGENT_TOKEN) missing.push("RPI_AGENT_TOKEN");
+    return missing;
+  }
+
   if (!env.RPI_HOST) missing.push("RPI_HOST");
   if (!env.RPI_USERNAME) missing.push("RPI_USERNAME");
-  if (!env.RPI_PRIVATE_KEY && !env.RPI_PASSWORD) {
-    missing.push("RPI_PRIVATE_KEY o RPI_PASSWORD");
-  }
+  if (!env.RPI_PRIVATE_KEY && !env.RPI_PASSWORD) missing.push("RPI_PRIVATE_KEY o RPI_PASSWORD");
   if (!env.RPI_STREAM_COMMAND) missing.push("RPI_STREAM_COMMAND");
 
   return missing;

@@ -30,6 +30,34 @@ export async function runStreamCommand(): Promise<StreamCommandResult> {
     throw new Error(`Faltan variables de entorno: ${missing.join(", ")}`);
   }
 
+  if (env.RPI_AGENT_URL) {
+    const response = await fetch(env.RPI_AGENT_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RPI_AGENT_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ action: "start" }),
+      signal: AbortSignal.timeout(env.RPI_COMMAND_TIMEOUT_MS)
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as Partial<StreamCommandResult> & {
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? `El agente respondio con HTTP ${response.status}.`);
+    }
+
+    return {
+      ok: Boolean(payload.ok),
+      code: payload.code ?? null,
+      signal: payload.signal ?? null,
+      stdout: payload.stdout ?? "",
+      stderr: payload.stderr ?? ""
+    };
+  }
+
   return new Promise((resolve, reject) => {
     const connection = new Client();
     const timeout = setTimeout(() => {

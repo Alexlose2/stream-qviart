@@ -59,10 +59,11 @@ function HlsPlayer({ reloadKey, streamUrl }: { reloadKey: number; streamUrl: str
       }
 
       const hls = new Hls({
-        backBufferLength: 15,
+        backBufferLength: 30,
         enableWorker: true,
-        liveSyncDurationCount: 2,
-        lowLatencyMode: true
+        liveMaxLatencyDurationCount: 12,
+        liveSyncDurationCount: 6,
+        lowLatencyMode: false
       });
 
       hls.loadSource(streamUrl);

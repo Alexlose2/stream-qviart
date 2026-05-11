@@ -82,6 +82,19 @@ async function fetchWithFirebaseToken(user: User, input: RequestInfo | URL, init
   });
 }
 
+async function readApiJson(response: Response) {
+  const text = await response.text();
+  if (!text.trim()) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      error: text.length > 220 ? `${text.slice(0, 220)}...` : text
+    };
+  }
+}
+
 function EmailPasswordForm({
   onError
 }: {
@@ -159,7 +172,7 @@ function AdminPanel({ user }: { user: User }) {
     setMessage(null);
     try {
       const response = await fetchWithFirebaseToken(user, "/api/admin/allowed-emails");
-      const payload = await response.json();
+      const payload = await readApiJson(response);
       if (!response.ok) throw new Error(payload.error ?? "No se pudo cargar la lista.");
       setEmails(payload.emails ?? []);
     } catch (error) {
@@ -181,7 +194,7 @@ function AdminPanel({ user }: { user: User }) {
       method: "POST",
       body: JSON.stringify({ email: newEmail, role: newRole })
     });
-    const payload = await response.json();
+    const payload = await readApiJson(response);
     if (!response.ok) {
       setMessage(payload.error ?? "No se pudo guardar.");
       return;
@@ -196,7 +209,7 @@ function AdminPanel({ user }: { user: User }) {
       method: "DELETE",
       body: JSON.stringify({ email })
     });
-    const payload = await response.json().catch(() => ({}));
+    const payload = await readApiJson(response);
     if (!response.ok) {
       setMessage(payload.error ?? "No se pudo eliminar.");
       return;

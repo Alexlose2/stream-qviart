@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 
 type StartState = "idle" | "pending" | "ready" | "error";
 
 type StreamControlsProps = {
   streamUrl?: string;
-  streamKind: "iframe" | "video";
+  streamKind: "hls" | "iframe" | "video";
   user?: User | null;
 };
 
@@ -32,6 +32,55 @@ function RefreshIcon() {
       />
     </svg>
   );
+}
+
+function HlsPlayer({ reloadKey, streamUrl }: { reloadKey: number; streamUrl: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    let hlsInstance: { destroy: () => void } | undefined;
+    let cancelled = false;
+
+    async function loadStream() {
+      if (!video) return;
+
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = streamUrl;
+        return;
+      }
+
+      const { default: Hls } = await import("hls.js");
+      if (cancelled || !Hls.isSupported()) {
+        video.src = streamUrl;
+        return;
+      }
+
+      const hls = new Hls({
+        backBufferLength: 15,
+        enableWorker: true,
+        liveSyncDurationCount: 2,
+        lowLatencyMode: true
+      });
+
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+      hlsInstance = hls;
+    }
+
+    void loadStream();
+
+    return () => {
+      cancelled = true;
+      hlsInstance?.destroy();
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [reloadKey, streamUrl]);
+
+  return <video ref={videoRef} controls playsInline />;
 }
 
 export function StreamControls({ streamKind, streamUrl, user }: StreamControlsProps) {
@@ -92,7 +141,9 @@ export function StreamControls({ streamKind, streamUrl, user }: StreamControlsPr
 
         <section className="stream-frame" aria-label="Reproductor de stream">
           {streamUrl ? (
-            streamKind === "video" ? (
+            streamKind === "hls" ? (
+              <HlsPlayer key={frameKey} reloadKey={frameKey} streamUrl={streamUrl} />
+            ) : streamKind === "video" ? (
               <video key={frameKey} controls playsInline>
                 <source src={streamUrl} type="video/mp4" />
               </video>

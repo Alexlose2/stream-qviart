@@ -17,7 +17,7 @@ import { StreamControls } from "@/components/StreamControls";
 type StreamAppProps = {
   allowedEmails: string[];
   streamUrl?: string;
-  streamKind: "iframe" | "video";
+  streamKind: "hls" | "iframe" | "video";
 };
 
 type AccessState = {

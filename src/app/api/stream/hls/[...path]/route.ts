@@ -16,7 +16,7 @@ function getContentType(path: string) {
 }
 
 function rewritePlaylist(text: string) {
-  return text
+  const lines = text
     .split("\n")
     .map((line) => {
       const trimmed = line.trim();
@@ -25,6 +25,19 @@ function rewritePlaylist(text: string) {
       }
 
       return `/api/stream/hls/${trimmed.replace(/^\/+/, "")}`;
+    });
+
+  if (!lines.some((line) => line.startsWith("#EXT-X-STREAM-INF"))) {
+    return lines.join("\n");
+  }
+
+  return lines
+    .map((line) => {
+      if (!line.startsWith("#EXT-X-STREAM-INF") || line.includes("CODECS=")) {
+        return line;
+      }
+
+      return `${line},CODECS="avc1.640028,mp4a.40.2"`;
     })
     .join("\n");
 }

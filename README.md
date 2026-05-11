@@ -30,6 +30,42 @@ Despues configura en Vercel:
 - `NEXT_PUBLIC_FIREBASE_APP_ID`
 - `FIREBASE_PROJECT_ID`
 
+Tambien activa en Authentication el proveedor `Email/Password` si quieres
+entrar con correo y contrasena.
+
+Para la pestana Admin, crea una base de datos Firestore y usa reglas como estas:
+
+```txt
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function bootstrapAdmin() {
+      return signedIn() && request.auth.token.email == "alexlose2@gmail.com";
+    }
+
+    function storedAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/allowedEmails/$(request.auth.token.email))
+        && get(/databases/$(database)/documents/allowedEmails/$(request.auth.token.email)).data.role == "admin";
+    }
+
+    match /allowedEmails/{emailId} {
+      allow get: if signedIn() && (
+        resource.data.email == request.auth.token.email
+        || bootstrapAdmin()
+        || storedAdmin()
+      );
+      allow list, create, update, delete: if bootstrapAdmin() || storedAdmin();
+    }
+  }
+}
+```
+
 ## Raspberry
 
 Lo mas limpio es que `RPI_STREAM_COMMAND` arranque un servicio ya definido en la Raspberry, por ejemplo:

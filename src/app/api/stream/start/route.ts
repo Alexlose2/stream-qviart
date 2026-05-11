@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { verifyFirebaseToken } from "@/lib/firebase-token";
+import { isAllowedTokenUser } from "@/lib/allowed-emails";
+import { getBearerToken, verifyFirebaseToken } from "@/lib/firebase-token";
 import { runStreamCommand } from "@/lib/raspberry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const user = await verifyFirebaseToken(request.headers.get("authorization"));
+  const authHeader = request.headers.get("authorization");
+  const token = getBearerToken(authHeader);
+  const user = await verifyFirebaseToken(authHeader);
 
-  if (!user) {
+  if (!token || !(await isAllowedTokenUser(token, user))) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 });
   }
 

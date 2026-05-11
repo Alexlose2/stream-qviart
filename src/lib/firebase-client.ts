@@ -2,8 +2,10 @@
 
 import { getApp, getApps, initializeApp } from "firebase/app";
 import {
+  createUserWithEmailAndPassword,
   getAuth,
   GoogleAuthProvider,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   type Auth
@@ -30,6 +32,18 @@ export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
   return signInWithPopup(auth, provider);
+}
+
+export async function signInWithEmail(email: string, password: string) {
+  const auth = getFirebaseAuth();
+  if (!auth) throw new Error("Firebase no esta configurado.");
+  return signInWithEmailAndPassword(auth, email, password);
+}
+
+export async function createEmailAccount(email: string, password: string) {
+  const auth = getFirebaseAuth();
+  if (!auth) throw new Error("Firebase no esta configurado.");
+  return createUserWithEmailAndPassword(auth, email, password);
 }
 
 export async function signOutOfFirebase() {

@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { getFirebaseProjectId, isEmailAllowed } from "@/lib/config";
+import { getFirebaseProjectId } from "@/lib/config";
 
 const firebaseJwks = createRemoteJWKSet(
   new URL(
@@ -7,7 +7,7 @@ const firebaseJwks = createRemoteJWKSet(
   )
 );
 
-type FirebaseTokenPayload = {
+export type FirebaseTokenPayload = {
   email?: string;
   email_verified?: boolean;
   name?: string;
@@ -22,9 +22,7 @@ export async function verifyFirebaseToken(authHeader: string | null) {
     throw new Error("Falta FIREBASE_PROJECT_ID o NEXT_PUBLIC_FIREBASE_PROJECT_ID.");
   }
 
-  const token = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice("Bearer ".length)
-    : null;
+  const token = getBearerToken(authHeader);
 
   if (!token) {
     return null;
@@ -35,9 +33,13 @@ export async function verifyFirebaseToken(authHeader: string | null) {
     audience: projectId
   });
 
-  if (!payload.email_verified || !isEmailAllowed(payload.email)) {
+  if (!payload.email_verified) {
     return null;
   }
 
   return payload;
+}
+
+export function getBearerToken(authHeader: string | null) {
+  return authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
 }

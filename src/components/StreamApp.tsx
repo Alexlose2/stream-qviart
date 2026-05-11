@@ -2,10 +2,12 @@
 
 import { onAuthStateChanged, type User } from "firebase/auth";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  createEmailAccount,
   getFirebaseAuth,
   isFirebaseConfigured,
+  signInWithEmail,
   signInWithGoogle,
   signOutOfFirebase
 } from "@/lib/firebase-client";
@@ -15,6 +17,18 @@ type StreamAppProps = {
   allowedEmails: string[];
   streamUrl?: string;
   streamKind: "iframe" | "video";
+};
+
+type AccessState = {
+  allowed: boolean;
+  admin: boolean;
+  loading: boolean;
+};
+
+type AllowedEmailRecord = {
+  email: string;
+  role: "admin" | "user";
+  source?: "env" | "firestore";
 };
 
 function GoogleIcon() {
@@ -55,31 +69,244 @@ function SignOutIcon() {
   );
 }
 
+async function fetchWithFirebaseToken(user: User, input: RequestInfo | URL, init: RequestInit = {}) {
+  const token = await user.getIdToken();
+  return fetch(input, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...init.headers
+    }
+  });
+}
+
+function EmailPasswordForm({
+  onError
+}: {
+  onError: (message: string | null) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSubmitting(true);
+    onError(null);
+
+    try {
+      if (mode === "signup") {
+        await createEmailAccount(email, password);
+      } else {
+        await signInWithEmail(email, password);
+      }
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "No se pudo completar el acceso.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="auth-form" onSubmit={handleSubmit}>
+      <label>
+        Correo
+        <input
+          autoComplete="email"
+          onChange={(event) => setEmail(event.target.value)}
+          required
+          type="email"
+          value={email}
+        />
+      </label>
+      <label>
+        Contrasena
+        <input
+          autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          minLength={6}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+          type="password"
+          value={password}
+        />
+      </label>
+      <button className="primary-button" disabled={isSubmitting} type="submit">
+        {mode === "signup" ? "Crear cuenta" : "Entrar"}
+      </button>
+      <button
+        className="secondary-button"
+        onClick={() => setMode(mode === "signup" ? "signin" : "signup")}
+        type="button"
+      >
+        {mode === "signup" ? "Ya tengo cuenta" : "Crear cuenta con correo autorizado"}
+      </button>
+    </form>
+  );
+}
+
+function AdminPanel({ user }: { user: User }) {
+  const [emails, setEmails] = useState<AllowedEmailRecord[]>([]);
+  const [newEmail, setNewEmail] = useState("");
+  const [newRole, setNewRole] = useState<"admin" | "user">("user");
+  const [message, setMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  async function loadEmails() {
+    setIsLoading(true);
+    setMessage(null);
+    try {
+      const response = await fetchWithFirebaseToken(user, "/api/admin/allowed-emails");
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "No se pudo cargar la lista.");
+      setEmails(payload.emails ?? []);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo cargar la lista.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadEmails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.uid]);
+
+  async function addEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    const response = await fetchWithFirebaseToken(user, "/api/admin/allowed-emails", {
+      method: "POST",
+      body: JSON.stringify({ email: newEmail, role: newRole })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setMessage(payload.error ?? "No se pudo guardar.");
+      return;
+    }
+    setNewEmail("");
+    await loadEmails();
+  }
+
+  async function removeEmail(email: string) {
+    setMessage(null);
+    const response = await fetchWithFirebaseToken(user, "/api/admin/allowed-emails", {
+      method: "DELETE",
+      body: JSON.stringify({ email })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(payload.error ?? "No se pudo eliminar.");
+      return;
+    }
+    await loadEmails();
+  }
+
+  return (
+    <section className="admin-panel">
+      <div>
+        <h1>Admin</h1>
+        <p>Autoriza correos para que puedan entrar con Google o con correo y contrasena.</p>
+      </div>
+
+      <form className="admin-form" onSubmit={addEmail}>
+        <input
+          onChange={(event) => setNewEmail(event.target.value)}
+          placeholder="correo@dominio.com"
+          required
+          type="email"
+          value={newEmail}
+        />
+        <select onChange={(event) => setNewRole(event.target.value as "admin" | "user")} value={newRole}>
+          <option value="user">Usuario</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button className="primary-button" type="submit">
+          Anadir
+        </button>
+      </form>
+
+      {message ? <p className="admin-message">{message}</p> : null}
+
+      <div className="admin-list">
+        {isLoading ? <p>Cargando...</p> : null}
+        {emails.map((record) => (
+          <div className="admin-row" key={record.email}>
+            <div>
+              <strong>{record.email}</strong>
+              <span>{record.role === "admin" ? "Admin" : "Usuario"}</span>
+            </div>
+            <button
+              className="danger-button"
+              disabled={record.source === "env"}
+              onClick={() => removeEmail(record.email)}
+              type="button"
+            >
+              Quitar
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppProps) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [access, setAccess] = useState<AccessState>({
+    allowed: false,
+    admin: false,
+    loading: true
+  });
+  const [activeTab, setActiveTab] = useState<"stream" | "admin">("stream");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
 
     if (!auth) {
-      setIsLoading(false);
+      setAccess({ allowed: false, admin: false, loading: false });
       return;
     }
 
     return onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
-      setIsLoading(false);
+      setAccess({ allowed: false, admin: false, loading: Boolean(nextUser) });
     });
   }, []);
 
-  const isAuthorized = useMemo(() => {
-    if (!user?.email) return false;
-    return allowedEmails.includes(user.email.toLowerCase());
-  }, [allowedEmails, user?.email]);
+  useEffect(() => {
+    if (!user) return;
+    const currentUser = user;
 
-  async function handleSignIn() {
+    async function loadAccess() {
+      try {
+        const response = await fetchWithFirebaseToken(currentUser, "/api/access");
+        const payload = await response.json();
+        setAccess({
+          allowed: Boolean(payload.allowed),
+          admin: Boolean(payload.admin),
+          loading: false
+        });
+      } catch {
+        setAccess({
+          allowed: allowedEmails.includes(currentUser.email?.toLowerCase() ?? ""),
+          admin: allowedEmails.includes(currentUser.email?.toLowerCase() ?? ""),
+          loading: false
+        });
+      }
+    }
+
+    void loadAccess();
+  }, [allowedEmails, user]);
+
+  const accountLabel = useMemo(() => {
+    if (!user) return "Cuenta";
+    return user.displayName ?? user.email ?? "Cuenta";
+  }, [user]);
+
+  async function handleGoogleSignIn() {
     setError(null);
     try {
       await signInWithGoogle();
@@ -102,16 +329,10 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
         {user ? (
           <div className="account">
             {user.photoURL ? (
-              <Image
-                alt=""
-                className="avatar"
-                height={38}
-                src={user.photoURL}
-                width={38}
-              />
+              <Image alt="" className="avatar" height={38} src={user.photoURL} width={38} />
             ) : null}
             <div>
-              <p className="account-name">{user.displayName ?? "Cuenta Google"}</p>
+              <p className="account-name">{accountLabel}</p>
               <p className="account-email">{user.email}</p>
             </div>
             <button className="secondary-button" onClick={signOutOfFirebase} type="button">
@@ -122,29 +343,57 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
         ) : null}
       </header>
 
-      {user && isAuthorized ? (
-        <StreamControls streamKind={streamKind} streamUrl={streamUrl} user={user} />
+      {user && access.allowed ? (
+        <>
+          <nav className="tabbar" aria-label="Secciones">
+            <button
+              className={activeTab === "stream" ? "active" : ""}
+              onClick={() => setActiveTab("stream")}
+              type="button"
+            >
+              Stream
+            </button>
+            {access.admin ? (
+              <button
+                className={activeTab === "admin" ? "active" : ""}
+                onClick={() => setActiveTab("admin")}
+                type="button"
+              >
+                Admin
+              </button>
+            ) : null}
+          </nav>
+          {activeTab === "admin" && access.admin ? (
+            <AdminPanel user={user} />
+          ) : (
+            <StreamControls streamKind={streamKind} streamUrl={streamUrl} user={user} />
+          )}
+        </>
       ) : (
         <main className="auth-card">
           <section className="auth-panel">
             <h1>Acceso privado</h1>
             <p>
-              Inicia sesion con Google desde Firebase. Solo las cuentas
+              Inicia sesion con Google o con correo y contrasena. Solo las cuentas
               autorizadas podran arrancar la Raspberry.
             </p>
             <button
               className="primary-button"
-              disabled={!isFirebaseConfigured || isLoading}
-              onClick={handleSignIn}
+              disabled={!isFirebaseConfigured || access.loading}
+              onClick={handleGoogleSignIn}
               type="button"
             >
               <GoogleIcon />
               Entrar con Google
             </button>
+            <div className="divider">o</div>
+            <EmailPasswordForm onError={setError} />
             {!isFirebaseConfigured ? (
               <p>Faltan las variables publicas de Firebase en Vercel.</p>
             ) : null}
-            {user && !isAuthorized ? <p>Tu cuenta no esta incluida en ALLOWED_EMAILS.</p> : null}
+            {user && !access.loading && !access.allowed ? (
+              <p>Tu cuenta no esta autorizada todavia.</p>
+            ) : null}
             {error ? <p>{error}</p> : null}
           </section>
         </main>

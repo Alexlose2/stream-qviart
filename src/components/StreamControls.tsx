@@ -93,7 +93,9 @@ export function StreamControls({ streamKind, streamUrl, user }: StreamControlsPr
         <section className="stream-frame" aria-label="Reproductor de stream">
           {streamUrl ? (
             streamKind === "video" ? (
-              <video key={frameKey} controls playsInline src={streamUrl} />
+              <video key={frameKey} controls playsInline>
+                <source src={streamUrl} type="video/mp4" />
+              </video>
             ) : (
               <iframe
                 key={frameKey}

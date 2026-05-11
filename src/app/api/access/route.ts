@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const session = await getPasskeySession();
     return NextResponse.json({
       allowed: Boolean(session?.email),
-      admin: false,
+      admin: session?.role === "admin",
       email: session?.email
     });
   }

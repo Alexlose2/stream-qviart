@@ -28,9 +28,22 @@ type AccessState = {
 
 type AllowedEmailRecord = {
   email: string;
+  passkeyCount?: number;
   role: "admin" | "user";
   source?: "env" | "firestore";
 };
+
+type ApiPayload = Record<string, unknown> & {
+  admin?: boolean;
+  allowed?: boolean;
+  email?: string;
+  emails?: AllowedEmailRecord[];
+  error?: string;
+  role?: "admin" | "user";
+};
+
+type PasskeyAuthenticationOptions = NonNullable<Parameters<typeof startAuthentication>[0]>["optionsJSON"];
+type PasskeyRegistrationOptions = NonNullable<Parameters<typeof startRegistration>[0]>["optionsJSON"];
 
 function GoogleIcon() {
   return (
@@ -82,7 +95,7 @@ async function fetchWithFirebaseToken(user: User, input: RequestInfo | URL, init
   });
 }
 
-async function readApiJson(response: Response) {
+async function readApiJson(response: Response): Promise<ApiPayload> {
   const text = await response.text();
   if (!text.trim()) return {};
 
@@ -245,11 +258,16 @@ function AdminPanel({ user }: { user: User }) {
 
       <div className="admin-list">
         {isLoading ? <p>Cargando...</p> : null}
+        {!isLoading && emails.length === 0 ? <p>No hay usuarios autorizados todavia.</p> : null}
         {emails.map((record) => (
           <div className="admin-row" key={record.email}>
             <div>
               <strong>{record.email}</strong>
-              <span>{record.role === "admin" ? "Admin" : "Usuario"}</span>
+              <span>
+                {record.role === "admin" ? "Admin" : "Usuario"} ·{" "}
+                {record.source === "env" ? "Base" : "Firestore"} ·{" "}
+                {record.passkeyCount ? `${record.passkeyCount} passkey` : "Sin passkey"}
+              </span>
             </div>
             <button
               className="danger-button"
@@ -298,7 +316,7 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
     async function loadAccess() {
       try {
         const response = await fetchWithFirebaseToken(currentUser, "/api/access");
-        const payload = await response.json();
+        const payload = await readApiJson(response);
         setAccess({
           allowed: Boolean(payload.allowed),
           admin: Boolean(payload.admin),
@@ -336,7 +354,7 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
       const optionsResponse = await fetch("/api/passkeys/authenticate/options", {
         method: "POST"
       });
-      const options = await optionsResponse.json();
+      const options = (await readApiJson(optionsResponse)) as unknown as PasskeyAuthenticationOptions & { error?: string };
       if (!optionsResponse.ok) throw new Error(options.error ?? "No se pudo iniciar passkey.");
 
       const credential = await startAuthentication({ optionsJSON: options });
@@ -345,11 +363,11 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credential)
       });
-      const payload = await verifyResponse.json();
+      const payload = await readApiJson(verifyResponse);
       if (!verifyResponse.ok) throw new Error(payload.error ?? "No se pudo verificar passkey.");
 
-      setPasskeyEmail(payload.email);
-      setAccess({ allowed: true, admin: false, loading: false });
+      setPasskeyEmail(payload.email ?? "Passkey");
+      setAccess({ allowed: true, admin: payload.role === "admin", loading: false });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "No se pudo entrar con passkey.");
     }
@@ -362,7 +380,7 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
       const optionsResponse = await fetchWithFirebaseToken(user, "/api/passkeys/register/options", {
         method: "POST"
       });
-      const options = await optionsResponse.json();
+      const options = (await readApiJson(optionsResponse)) as unknown as PasskeyRegistrationOptions & { error?: string };
       if (!optionsResponse.ok) throw new Error(options.error ?? "No se pudo crear la passkey.");
 
       const credential = await startRegistration({ optionsJSON: options });
@@ -370,7 +388,7 @@ export function StreamApp({ allowedEmails, streamKind, streamUrl }: StreamAppPro
         method: "POST",
         body: JSON.stringify(credential)
       });
-      const payload = await verifyResponse.json();
+      const payload = await readApiJson(verifyResponse);
       if (!verifyResponse.ok) throw new Error(payload.error ?? "No se pudo verificar la passkey.");
       setError("Passkey guardada en este dispositivo.");
     } catch (nextError) {

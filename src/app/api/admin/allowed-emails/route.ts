@@ -6,6 +6,7 @@ import {
   saveAllowedEmail
 } from "@/lib/allowed-emails";
 import { getBearerToken, verifyFirebaseToken } from "@/lib/firebase-token";
+import { listPasskeys } from "@/lib/passkeys";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,21 @@ export async function GET(request: Request) {
   if (!token) return NextResponse.json({ error: "No autorizado." }, { status: 403 });
 
   try {
-    return NextResponse.json({ emails: await listAllowedEmails(token) });
+    const [emails, passkeys] = await Promise.all([
+      listAllowedEmails(token),
+      listPasskeys(token).catch(() => [])
+    ]);
+    const passkeysByEmail = new Map<string, number>();
+    passkeys.forEach((passkey) => {
+      passkeysByEmail.set(passkey.email, (passkeysByEmail.get(passkey.email) ?? 0) + 1);
+    });
+
+    return NextResponse.json({
+      emails: emails.map((record) => ({
+        ...record,
+        passkeyCount: passkeysByEmail.get(record.email) ?? 0
+      }))
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "No se pudo cargar la lista." },

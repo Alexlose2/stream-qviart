@@ -14,7 +14,10 @@ export async function POST(request: Request) {
 
   const passkeySession = await getPasskeySession();
 
-  if ((!token || !(await isAllowedTokenUser(token, user))) && !passkeySession?.email) {
+  if (
+    (!token || !(await isAllowedTokenUser(token, user))) &&
+    !passkeySession?.email
+  ) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 });
   }
 

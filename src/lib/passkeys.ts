@@ -10,6 +10,12 @@ export type StoredPasskey = {
   transports?: AuthenticatorTransportFuture[];
 };
 
+export type PasskeySummary = {
+  id: string;
+  email: string;
+  role: "admin" | "user";
+};
+
 type FirestoreDocument = {
   name: string;
   fields?: {
@@ -54,8 +60,37 @@ export async function getPasskey(id: string) {
   const response = await fetch(`${getFirestoreBaseUrl()}/passkeys/${id}`, {
     cache: "no-store"
   });
-  if (!response.ok) return null;
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(
+      response.status === 403
+        ? "Firestore esta bloqueando la lectura de passkeys. Revisa las reglas de Firestore para permitir get en passkeys."
+        : await response.text()
+    );
+  }
   return parsePasskey((await response.json()) as FirestoreDocument);
+}
+
+export async function listPasskeys(token: string) {
+  const response = await fetch(`${getFirestoreBaseUrl()}/passkeys?pageSize=100`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    cache: "no-store"
+  });
+
+  if (!response.ok) throw new Error(await response.text());
+
+  const payload = (await response.json()) as { documents?: FirestoreDocument[] };
+  return (payload.documents ?? [])
+    .map(parsePasskey)
+    .filter((passkey): passkey is StoredPasskey => Boolean(passkey))
+    .map((passkey): PasskeySummary => ({
+      id: passkey.id,
+      email: passkey.email.toLowerCase(),
+      role: passkey.role
+    }));
 }
 
 export async function savePasskey(token: string, passkey: StoredPasskey) {

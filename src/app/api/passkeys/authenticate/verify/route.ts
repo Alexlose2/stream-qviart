@@ -1,7 +1,12 @@
 import { verifyAuthenticationResponse, type AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { NextResponse } from "next/server";
 import { clearChallengeCookie, getChallengeCookie, setPasskeySession } from "@/lib/passkey-session";
-import { getPasskey, toWebAuthnCredential } from "@/lib/passkeys";
+import {
+  decodePasskeyUserHandle,
+  getPasskey,
+  getUserPasskey,
+  toWebAuthnCredential
+} from "@/lib/passkeys";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +15,10 @@ export async function POST(request: Request) {
   try {
     const challenge = await getChallengeCookie("authentication");
     const response = (await request.json()) as AuthenticationResponseJSON;
-    const passkey = await getPasskey(response.id);
+    const emailFromPasskey = decodePasskeyUserHandle(response.response.userHandle);
+    const passkey =
+      (await getPasskey(response.id)) ??
+      (emailFromPasskey ? await getUserPasskey(emailFromPasskey, response.id) : null);
 
     if (!challenge?.challenge || !passkey) {
       return NextResponse.json(

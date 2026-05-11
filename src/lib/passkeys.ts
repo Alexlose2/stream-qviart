@@ -33,6 +33,24 @@ function getFirestoreBaseUrl() {
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 }
 
+function passkeyDocumentUrl(id: string) {
+  return `${getFirestoreBaseUrl()}/passkeys/${encodeURIComponent(id)}`;
+}
+
+function userPasskeyDocumentUrl(email: string, id: string) {
+  return `${getFirestoreBaseUrl()}/passkeyUsers/${encodeURIComponent(email.toLowerCase())}/credentials/${encodeURIComponent(id)}`;
+}
+
+export function decodePasskeyUserHandle(userHandle?: string) {
+  if (!userHandle) return null;
+  try {
+    const email = Buffer.from(userHandle, "base64url").toString("utf8").trim().toLowerCase();
+    return email.includes("@") ? email : null;
+  } catch {
+    return null;
+  }
+}
+
 function parsePasskey(document: FirestoreDocument): StoredPasskey | null {
   const id = document.fields?.id?.stringValue;
   const email = document.fields?.email?.stringValue;
@@ -57,7 +75,7 @@ export function toWebAuthnCredential(passkey: StoredPasskey): WebAuthnCredential
 }
 
 export async function getPasskey(id: string) {
-  const response = await fetch(`${getFirestoreBaseUrl()}/passkeys/${id}`, {
+  const response = await fetch(passkeyDocumentUrl(id), {
     cache: "no-store"
   });
   if (response.status === 404) return null;
@@ -65,6 +83,21 @@ export async function getPasskey(id: string) {
     throw new Error(
       response.status === 403
         ? "Firestore esta bloqueando la lectura de passkeys. Revisa las reglas de Firestore para permitir get en passkeys."
+        : await response.text()
+    );
+  }
+  return parsePasskey((await response.json()) as FirestoreDocument);
+}
+
+export async function getUserPasskey(email: string, id: string) {
+  const response = await fetch(userPasskeyDocumentUrl(email, id), {
+    cache: "no-store"
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(
+      response.status === 403
+        ? "Firestore esta bloqueando la lectura de passkeys por usuario. Revisa las reglas de Firestore."
         : await response.text()
     );
   }
@@ -94,22 +127,33 @@ export async function listPasskeys(token: string) {
 }
 
 export async function savePasskey(token: string, passkey: StoredPasskey) {
-  const response = await fetch(`${getFirestoreBaseUrl()}/passkeys/${passkey.id}`, {
+  const body = JSON.stringify({
+    fields: {
+      id: { stringValue: passkey.id },
+      email: { stringValue: passkey.email.toLowerCase() },
+      role: { stringValue: passkey.role },
+      publicKey: { stringValue: passkey.publicKey },
+      counter: { integerValue: String(passkey.counter) }
+    }
+  });
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json"
+  };
+
+  const response = await fetch(passkeyDocumentUrl(passkey.id), {
     method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      fields: {
-        id: { stringValue: passkey.id },
-        email: { stringValue: passkey.email },
-        role: { stringValue: passkey.role },
-        publicKey: { stringValue: passkey.publicKey },
-        counter: { integerValue: String(passkey.counter) }
-      }
-    })
+    headers,
+    body
   });
 
   if (!response.ok) throw new Error(await response.text());
+
+  const userResponse = await fetch(userPasskeyDocumentUrl(passkey.email, passkey.id), {
+    method: "PATCH",
+    headers,
+    body
+  });
+
+  if (!userResponse.ok) throw new Error(await userResponse.text());
 }
